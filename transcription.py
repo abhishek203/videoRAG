@@ -20,14 +20,32 @@ client = AzureOpenAI(
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 transcriptions_collection = chroma_client.get_or_create_collection("transcriptions")
 
-def store_in_vectordb(filename: str, text: str):
+def store_in_vectordb(filename: str, transcription_data: dict):
+    documents = []
+    metadatas = []
+    ids = []
+    
+    for segment in transcription_data.segments:
+        document = segment.text
+        metadata = {
+            "filename": filename,
+            "start_time": segment.start,
+            "end_time": segment.end,
+            "segment_id": segment.id
+        }
+        id = f"{filename}_segment_{segment.id}"
+
+        documents.append(document)
+        metadatas.append(metadata)
+        ids.append(id)
+
     transcriptions_collection.add(
-        documents=[text],
-        metadatas=[{"filename": filename}],
-        ids=[filename]
+        documents=documents,
+        metadatas=metadatas,
+        ids=ids
     )
 
-    print(f"Stored transcription for {filename} in the vector database.")
+    print(f"Stored transcription segments for {filename} in the vector database.")
 
 def get_transcription():
     data_dir = 'data'
@@ -41,7 +59,8 @@ def get_transcription():
                 transcription = client.audio.transcriptions.create(
                     model="whisper",
                     file=audio_file,
-                    response_format="text"
+                    response_format="verbose_json",
+                    timestamp_granularities=['segment']
                 )
             transcriptions[filename] = transcription
             # Store the transcription in the vector database
@@ -49,10 +68,25 @@ def get_transcription():
 
     return transcriptions
 
+def search_transcriptions(query: str, n_results: int = 5):
+    results = transcriptions_collection.query(
+        query_texts=[query],
+        n_results=n_results
+    )
+    
+    formatted_results = []
+    for i, (doc, metadata) in enumerate(zip(results['documents'][0], results['metadatas'][0])):
+        formatted_results.append({
+            "text": doc,
+            "filename": metadata['filename'],
+            "start_time": metadata['start_time'],
+            "end_time": metadata['end_time']
+        })
+    
+    return formatted_results
 
-
-
-# Example usage
 if __name__ == "__main__":
-    results = get_transcription()
+    # results = get_transcription()
+    a = search_transcriptions('how to see existing user')
+    print(a)
     
